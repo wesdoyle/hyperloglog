@@ -15,6 +15,7 @@ import sys
 import math
 import re
 import time
+import mmh3
 
 # -- Notes --
 # let "hash(D)" hash data from domain D to the binary domain
@@ -106,8 +107,8 @@ class HyperLogLog:
         Python's builtin hash returns a 64-bit integer on my machine,
         so we can constrain it to consistent 32-bit using a mask.
         """
-        mask = (1 << 32) - 1
-        return hash(v) & mask
+        return mmh3.hash(str(v), seed=77) & 0xFFFFFFFF
+        
 
     def _rho(self, w):
         """
@@ -138,7 +139,7 @@ class HyperLogLog:
         self.registers = [max(r1, r2) for r1, r2 in zip(self.registers, other.registers)]
 
 def process_file_hll(file_path):
-    hll = HyperLogLog(precision=14)
+    hll = HyperLogLog(precision=16)
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
             words = re.findall(r'\w+', line.lower())
