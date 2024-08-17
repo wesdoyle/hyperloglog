@@ -4,8 +4,8 @@ import re
 import time
 from hyperloglog import HyperLogLog
 
-def process_sqlite_hll(db_path, table_name, column_name):
-    hll = HyperLogLog(precision=14)
+def process_sqlite_hll(db_path, table_name, column_name, precision):
+    hll = HyperLogLog(precision=precision)
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -62,35 +62,30 @@ def process_sqlite_exact(db_path, table_name, column_name):
     return len(unique_words)
 
 def main():
-    if len(sys.argv) != 4:
-        print("Usage: python hll_sqlite.py <db_path> <table_name> <column_name>")
+    if len(sys.argv) != 5:
+        print("Usage: python hll_sqlite.py <db_path> <table_name> <column_name> <precision>")
         sys.exit(1)
 
     db_path = sys.argv[1]
     table_name = sys.argv[2]
     column_name = sys.argv[3]
+    precision = int(sys.argv[4])
 
     # HyperLogLog estimation
-    start_time = time.time()
-    hll_result = process_sqlite_hll(db_path, table_name, column_name)
-    hll_time = time.time() - start_time
+    hll_result = process_sqlite_hll(db_path, table_name, column_name, precision)
 
     # Exact counting
-    start_time = time.time()
     exact_result = process_sqlite_exact(db_path, table_name, column_name)
-    exact_time = time.time() - start_time
-
     error_percentage = abs(hll_result - exact_result) / exact_result * 100
-    time_saved = exact_time - hll_time
 
     print("\nComparison of HyperLogLog vs Exact Counting (SQLite)")
     print("-" * 58)
-    print(f"{'Method':<15}{'Count':<10}{'Time (s)':<12}{'Error (%)':<10}")
+    print(f"{'Method':<15}{'Count':<10}{'Error (%)':<10}")
     print("-" * 58)
-    print(f"{'HyperLogLog':<15}{hll_result:<10d}{hll_time:<12.4f}{error_percentage:<10.2f}")
-    print(f"{'Exact':<15}{exact_result:<10d}{exact_time:<12.4f}{'N/A':<10}")
+    print(f"{'HyperLogLog':<15}{hll_result:<10d}{error_percentage:<10.2f}")
+    print(f"{'Exact':<15}{exact_result:<10d}{'N/A':<10}")
     print("-" * 58)
-    print(f"Time Saved: {time_saved:.4f} seconds")
+
 
 if __name__ == '__main__':
     main()

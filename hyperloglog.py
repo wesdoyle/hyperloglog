@@ -14,8 +14,9 @@ Links:
 import sys
 import math
 import re
-import time
 import mmh3
+import hashlib
+import numpy as np
 
 # -- Notes --
 # let "hash(D)" hash data from domain D to the binary domain
@@ -37,90 +38,11 @@ import mmh3
 # > merge to obtain the union of two sets. 
 
 class HyperLogLog:
-    def __init__(self, precision=8):
-        self.precision = precision
-        self.m = 1 << self.precision # i.e. [1 0 0 0 0 0 0 0 0]
-        self.alpha = self._get_alpha()
-        self.registers = [0] * self.m
-
-    def add(self, v):
-        """
-        Add a new element to the estimator.
-        This hashes the input value and gets two parts of the hash: j and w.
-        j is used to select register, and w contains the remaining bits of the hash. 
-        w is used to potentially update the value at that register.
-        The register is updated with whichever is larger, its current value or the result of _rho(w).
-
-        _rho just calculates the position of the _leftmost_ 1-bit in the binary representation of w.
-        in other words, it is the count of leading zeroes + 1
-
-        we're keeping track of the rarest event we've seen for each register.
-        a long run of leading zeroes is a rare event - longer runs are more rare.
-        by keeping the maximum _rho(w) for each register, 
-        we're essentially recording the rarest event we've 
-        seen for that portion of the hash space.
-
-        a precision parameter can be used to choose a number of registers.
-        the larger the number of buckets, the greater precision, because we'll
-        be able to capture more unique events.
-
-        :param v: the value to be added to the estimator
-        """
-        x = self._hash(v)
-        j = x & (self.m - 1) # efficient modulo
-        """
-        Why subtract 1 from m before ANDing?
-        m   = 8 = 1000
-        m-1 = 7 = 0111
-
-        By subtracting 1, we create a bit mask that captures the least significant bits:
-        1000 - 1 = 0111
-
-        This mask, when used with AND, effectively performs the modulo operation, selecting a register:
-        Any number AND 0111 will result in a value between 0 and 7,
-        which is equivalent to that number modulo 8.
-        """
-        w = x >> self.precision
-        self.registers[j] = max(self.registers[j], self._rho(w))
-
-    def count(self):
-        big_z = 1 / sum(2 ** -r for r in self.registers)
-        big_e = big_z * self.m ** 2 * self.alpha
-
-        # small bias correction
-        if big_e <= 2.5 * self.m:
-            zeros = self.registers.count(0)
-            if zeros:
-                big_e = self.m * math.log(self.m / zeros)
-
-        # large bias correction
-        elif big_e > 1 / 30 * (1 << 32):
-            log_arg = 1 - big_e / (1 << 32)
-            if log_arg <= 0:
-                return (1 << 32) - 1
-            big_e = -1 * (1 << 32) * math.log(log_arg)
-        return int(big_e)
-
-    def _hash(self, v):
-        """
-        Basic hashing function.
-        Python's builtin hash returns a 64-bit integer on my machine,
-        so we can constrain it to consistent 32-bit using a mask.
-        """
-        return mmh3.hash(str(v), seed=77) & 0xFFFFFFFF
-        
-
-    def _rho(self, w):
-        """
-        This is a ranking function or "leading zero count" (LZC) function
-        The intuition behind rho(w):
-        In a uniform random binary number, the probability of seeing a run of n leading zeros is 2^(-n).
-        By keeping track of the maximum number of leading zeros we've seen for each register, we're essentially tracking the "rarest" event for that register.
-        These "rarest events" across all registers can be used to estimate the number of unique elements we've seen.
- 
-        :param w:
-        """
-        return 32 - (w & 31).bit_length() if w else 32
+    def __init__(self, precision=14):
+        self.p = precision
+        self.m = 1 << self.p  # 2^p
+        self.registers = [0] * self.m 
+        self.alpha_m = self._get_alpha()
 
     def _get_alpha(self):
         # See Fig.3 from original paper:
@@ -133,55 +55,86 @@ class HyperLogLog:
             return 0.709
         return 0.7213 / (1 + 1.079 / self.m)
 
-    def merge(self, other):
-        if self.m != other.m:
-            raise ValueError("Precisions must be equal to merge HyperLogLog instances")
-        self.registers = [max(r1, r2) for r1, r2 in zip(self.registers, other.registers)]
 
-def process_file_hll(file_path):
-    hll = HyperLogLog(precision=16)
+    def _hash(self, value: str) -> int:
+        hashed_result = mmh3.hash(str(value), seed=77) & 0xFFFFFFFF
+        # hashed_result = int(hashlib.md5(value.encode('utf8')).hexdigest(), 16)
+        return hashed_result
+
+
+    def _rho(self, w: int) -> int:
+        if w == 0:
+            return 32 - self.p
+        # Get the position of the leftmost 1-bit (counting from the most significant bit)
+        return (w.bit_length() - 1).bit_length()
+
+
+    def add(self, v):
+        hashed_value = self._hash(v)
+        j = hashed_value & (self.m - 1)
+        w = (hashed_value >> self.p) & 0xFFFFFFFF
+        self.registers[j] = max(self.registers[j], self._rho(w))
+
+
+    def count(self):
+        # Calculate the harmonic mean
+        Z = 1 / sum([2.0 ** -b for b in self.registers])
+        E = self.alpha_m * self.m ** 2 * Z 
+
+        # Apply bias correction
+        if E <= 2.5 * self.m:
+            V = self.registers.count(0)
+            if V > 0:
+                E = self.m * math.log(self.m / V)
+        elif E > 1 / 30.0:
+            E = -(2 ** 128) * math.log(1 - E / (2 ** 128))
+
+        return int(E)
+
+
+def process_file_hll(file_path: str, precision: int) -> int:
+    hll = HyperLogLog(precision=precision)
+
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            words = re.findall(r'\w+', line.lower())
-            for word in words:
-                hll.add(word)
-    return hll.count()
+            tokens = re.findall(r'\w+', line.lower())  # Use regex to match words
+            for token in tokens:
+                hll.add(token)
+    result = hll.count()
+    return result 
+
 
 def process_file_exact(file_path):
-    unique_words = set()
+    unique_tokens = set()
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            words = re.findall(r'\w+', line.lower())
-            unique_words.update(words)
-    return len(unique_words)
+            tokens = re.findall(r'\w+', line.lower())
+            unique_tokens.update(tokens)
+    return len(unique_tokens)
+
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python script.py <file_path>")
+    if len(sys.argv) != 3:
+        print("Usage: python script.py <file_path> <precision>")
         sys.exit(1)
+
     file_path = sys.argv[1]
+    precision = int(sys.argv[2])
 
     # HyperLogLog estimation
-    start_time = time.time()
-    hll_result = process_file_hll(file_path)
-    hll_time = time.time() - start_time
+    hll_result = process_file_hll(file_path, precision)
 
     # Exact counting
-    start_time = time.time()
     exact_result = process_file_exact(file_path)
-    exact_time = time.time() - start_time
-
     error_percentage = abs(hll_result - exact_result) / exact_result * 100
-    time_saved = exact_time - hll_time
 
     print("\nComparison of HyperLogLog vs Exact Counting")
     print("-" * 58)
-    print(f"{'Method':<15}{'Count':<10}{'Time (s)':<12}{'Error (%)':<10}")
+    print(f"{'Method':<15}{'Count':<10}{'Error (%)':<10}")
     print("-" * 58)
-    print(f"{'HyperLogLog':<15}{hll_result:<10d}{hll_time:<12.4f}{error_percentage:<10.2f}")
-    print(f"{'Exact':<15}{exact_result:<10d}{exact_time:<12.4f}{'N/A':<10}")
+    print(f"{'HyperLogLog':<15}{hll_result:<10d}{error_percentage:<10.2f}")
+    print(f"{'Exact':<15}{exact_result:<10d}{'N/A':<10}")
     print("-" * 58)
-    print(f"Time Saved: {time_saved:.4f} seconds")
 
 
 if __name__ == '__main__':
