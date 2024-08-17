@@ -14,6 +14,7 @@ Links:
 import sys
 import math
 import re
+import time
 
 # -- Notes --
 # let "hash(D)" hash data from domain D to the binary domain
@@ -136,23 +137,51 @@ class HyperLogLog:
             raise ValueError("Precisions must be equal to merge HyperLogLog instances")
         self.registers = [max(r1, r2) for r1, r2 in zip(self.registers, other.registers)]
 
-def process_file(file_path):
+def process_file_hll(file_path):
     hll = HyperLogLog(precision=14)
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            # Split the line into words
             words = re.findall(r'\w+', line.lower())
             for word in words:
                 hll.add(word)
     return hll.count()
+
+def process_file_exact(file_path):
+    unique_words = set()
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            words = re.findall(r'\w+', line.lower())
+            unique_words.update(words)
+    return len(unique_words)
 
 def main():
     if len(sys.argv) != 2:
         print("Usage: python script.py <file_path>")
         sys.exit(1)
     file_path = sys.argv[1]
-    result = process_file(file_path)
-    print(f"Estimated number of unique words: {result}")
+
+    # HyperLogLog estimation
+    start_time = time.time()
+    hll_result = process_file_hll(file_path)
+    hll_time = time.time() - start_time
+
+    # Exact counting
+    start_time = time.time()
+    exact_result = process_file_exact(file_path)
+    exact_time = time.time() - start_time
+
+    error_percentage = abs(hll_result - exact_result) / exact_result * 100
+    time_saved = exact_time - hll_time
+
+    print("\nComparison of HyperLogLog vs Exact Counting")
+    print("-" * 58)
+    print(f"{'Method':<15}{'Count':<10}{'Time (s)':<12}{'Error (%)':<10}")
+    print("-" * 58)
+    print(f"{'HyperLogLog':<15}{hll_result:<10d}{hll_time:<12.4f}{error_percentage:<10.2f}")
+    print(f"{'Exact':<15}{exact_result:<10d}{exact_time:<12.4f}{'N/A':<10}")
+    print("-" * 58)
+    print(f"Time Saved: {time_saved:.4f} seconds")
+
 
 if __name__ == '__main__':
     main()
