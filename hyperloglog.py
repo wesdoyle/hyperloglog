@@ -13,6 +13,7 @@ Links:
 
 import sys
 import math
+import re
 
 # -- Notes --
 # let "hash(D)" hash data from domain D to the binary domain
@@ -136,10 +137,13 @@ class HyperLogLog:
         self.registers = [max(r1, r2) for r1, r2 in zip(self.registers, other.registers)]
 
 def process_file(file_path):
-    hll = HyperLogLog()
+    hll = HyperLogLog(precision=14)
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            hll.add(line.strip())
+            # Split the line into words
+            words = re.findall(r'\w+', line.lower())
+            for word in words:
+                hll.add(word)
     return hll.count()
 
 def main():
@@ -148,7 +152,7 @@ def main():
         sys.exit(1)
     file_path = sys.argv[1]
     result = process_file(file_path)
-    print(f"Estimated number of unique lines: {result}")
+    print(f"Estimated number of unique words: {result}")
 
 if __name__ == '__main__':
     main()
