@@ -37,8 +37,8 @@ class HyperLogLog:
 
 
     def __init__(self):
-        self.precision = precision
-        self.m = 1 << precision
+        self.precision = 8 
+        self.m = 1 << precision # i.e. [1 0 0 0 0 0 0 0 0]
         self.registers = [0] * self.m
 
     def add(self, v):
@@ -58,20 +58,46 @@ class HyperLogLog:
         we're essentially recording the rarest event we've 
         seen for that portion of the hash space.
 
+        a precision parameter can be used to choose a number of registers.
+        the larger the number of buckets, the greater precision, because we'll
+        be able to capture more unique events.
+
         :param v: the value to be added to the estimator
         """
         x = self._hash(v)
+        j = x & (self.m-1) # efficient modulo
+        """
+        Why subtract 1 from m before ANDing?
+        m   = 8 = 1000
+        m-1 = 7 = 0111
 
-        # ...
+        By subtracting 1, we create a bit mask that captures the least significant bits:
+        1000 - 1 = 0111
+
+        This mask, when used with AND, effectively performs the modulo operation, selecting a register:
+        Any number AND 0111 will result in a value between 0 and 7,
+        which is equivalent to that number modulo 8.
+        """
+        w = x >> self.precision
+        self.registers[j] = max(self.registers[j], self._rho(w))
 
     def count(self):
         pass
 
     def _hash(self, v):
-        h = hash(v)
+        return hash(v) & self.mask
 
-    def _rho(self):
-        pass
+    def _rho(self, w):
+        """
+        This is a ranking function or "leading zero count" (LZC) function
+        The intuition behind rho(w):
+        In a uniform random binary number, the probability of seeing a run of n leading zeros is 2^(-n).
+        By keeping track of the maximum number of leading zeros we've seen for each register, we're essentially tracking the "rarest" event for that register.
+        These "rarest events" across all registers can be used to estimate the number of unique elements we've seen.
+
+        :param w:
+        """
+        return 32 - (w & 31).bit_length() if w else 32
 
 
 def process_file(file_path):
