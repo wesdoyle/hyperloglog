@@ -89,7 +89,9 @@ class HyperLogLog:
         elif E > 1 / 30.0:
             E = -(2 ** 128) * math.log(1 - E / (2 ** 128))
 
-        return int(E)
+        result = int(E)
+        print(result)
+        return result
 
 
 def process_file_hll(file_path: str, precision: int) -> int:
