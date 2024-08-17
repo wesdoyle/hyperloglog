@@ -85,7 +85,13 @@ class HyperLogLog:
         pass
 
     def _hash(self, v):
-        return hash(v) & self.mask
+        """
+        Basic hashing function.
+        Python's builtin hash returns a 64-bit integer on my machine,
+        so we can constrain it to consistent 32-bit using a mask.
+        """
+        mask = (1 << 32) - 1 # 32-bit unsigned in mask
+        return hash(v) & mask
 
     def _rho(self, w):
         """
