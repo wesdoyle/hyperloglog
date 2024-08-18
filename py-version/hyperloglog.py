@@ -4,6 +4,7 @@ distinct elements in a large data set with a
 relatively small memory footprint. 
 
 Links:
+- https://static.googleusercontent.com/media/research.google.com/en/us/pubs/archive/40671.pdf
 - https://engineering.fb.com/2018/12/13/data-infrastructure/hyperloglog/
 - https://redis.io/docs/latest/develop/data-types/probabilistic/hyperloglogs/
 - https://en.wikipedia.org/wiki/HyperLogLog
