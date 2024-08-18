@@ -2,4 +2,5 @@
 .mypy_cache
 data/wikibooks.sqlite
 .venv
+./rust-version/hll_sqlite/target
 __pycache__

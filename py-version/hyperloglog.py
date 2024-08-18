@@ -17,7 +17,6 @@ import re
 import mmh3
 import hashlib
 import numpy as np
-from memory_profiler import profile
 
 # -- Notes --
 # let "hash(D)" hash data from domain D to the binary domain
@@ -58,8 +57,8 @@ class HyperLogLog:
 
 
     def _hash(self, value: str) -> int:
-        hashed_result = mmh3.hash(str(value), seed=77) & 0xFFFFFFFF
-        # hashed_result = int(hashlib.md5(value.encode('utf8')).hexdigest(), 16)
+        # hashed_result = mmh3.hash(str(value), seed=77) & 0xFFFFFFFF
+        hashed_result = int(hashlib.md5(value.encode('utf8')).hexdigest(), 16)
         return hashed_result
 
 
@@ -91,11 +90,9 @@ class HyperLogLog:
             E = -(2 ** 128) * math.log(1 - E / (2 ** 128))
 
         result = int(E)
-        print(result)
         return result
 
 
-@profile
 def process_file_hll(file_path: str, precision: int) -> int:
     hll = HyperLogLog(precision=precision)
 
@@ -108,7 +105,6 @@ def process_file_hll(file_path: str, precision: int) -> int:
     return result 
 
 
-@profile
 def process_file_exact(file_path):
     unique_tokens = set()
     with open(file_path, 'r', encoding='utf-8') as f:
